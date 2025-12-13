@@ -1,0 +1,23 @@
+{
+  "name": "know",
+  "description": "Knowledge management agents for Conduit - capture technical insights, patterns, and decisions with structured retrieval",
+  "version": "1.0.0",
+  "author": {
+    "name": "Jordan Partridge",
+    "email": "jordan@partridge.rocks"
+  },
+  "homepage": "https://github.com/conduit-ui/know-plugin",
+  "repository": "https://github.com/conduit-ui/know-plugin",
+  "license": "MIT",
+  "keywords": [
+    "knowledge-management",
+    "conduit",
+    "ai-memory",
+    "technical-insights",
+    "patterns",
+    "decisions"
+  ],
+  "dependencies": {
+    "cli": ["conduit"]
+  }
+}
