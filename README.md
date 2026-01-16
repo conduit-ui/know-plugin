@@ -49,6 +49,61 @@ User: "How do we handle authentication in this project?"
 Claude: Uses knowledge-retriever to search for established auth patterns
 ```
 
+## Hooks (Automatic Knowledge Loop)
+
+In addition to agents, this plugin includes hooks for automatic knowledge injection and capture.
+
+### Installation
+
+```bash
+# After installing the plugin, set up hooks:
+./hooks/install.sh
+```
+
+### What the Hooks Do
+
+| Hook | Event | Purpose |
+|------|-------|---------|
+| `inject-knowledge.sh` | SessionStart | Injects profile, project context, blockers at session start |
+| `knowledge-capture.sh` | UserPromptSubmit | Captures milestones/decisions/blockers + semantic whispers |
+
+### The Knowledge Whisper Loop
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    THE WHISPER LOOP                         │
+├─────────────────────────────────────────────────────────────┤
+│  You type → [UserPromptSubmit hook]                         │
+│                    ↓                                        │
+│            ┌──────────────────┐                             │
+│            │ CAPTURE          │                             │
+│            │ • milestones     │ → know add                  │
+│            │ • decisions      │                             │
+│            │ • blockers       │                             │
+│            └──────────────────┘                             │
+│                    ↓                                        │
+│            ┌──────────────────┐                             │
+│            │ WHISPER          │                             │
+│            │ • semantic search│ → know search --semantic    │
+│            │ • inject context │ → <knowledge-whisper>       │
+│            └──────────────────┘                             │
+│                    ↓                                        │
+│              Claude responds with full context              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Configuration
+
+Set these environment variables for full functionality:
+
+```bash
+# Profile ID for session briefing (find with: know entries | grep -i profile)
+export KNOW_PROFILE_ID="your-profile-entry-id"
+
+# Vision repo for backlog injection
+export KNOW_VISION_REPO="yourorg/vision"
+```
+
 ## How It Works
 
 ```
