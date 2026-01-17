@@ -16,8 +16,5 @@
     "technical-insights",
     "patterns",
     "decisions"
-  ],
-  "dependencies": {
-    "cli": ["conduit"]
-  }
+  ]
 }
