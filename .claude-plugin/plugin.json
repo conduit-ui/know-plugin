@@ -1,7 +1,7 @@
 {
   "name": "know",
-  "description": "Knowledge management agents for Conduit - capture technical insights, patterns, and decisions with structured retrieval",
-  "version": "1.0.0",
+  "description": "Knowledge management with automatic whisper loop - captures milestones, decisions, blockers and whispers relevant context on every prompt",
+  "version": "2.0.0",
   "author": {
     "name": "Jordan Partridge",
     "email": "jordan@partridge.rocks"
@@ -13,8 +13,8 @@
     "knowledge-management",
     "conduit",
     "ai-memory",
-    "technical-insights",
-    "patterns",
-    "decisions"
+    "whisper-loop",
+    "context-continuity",
+    "auto-capture"
   ]
 }
