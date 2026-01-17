@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Install know-plugin hooks for Claude Code
-# Sets up automatic knowledge injection and capture
+# Sets up automatic knowledge injection, capture, and sync
 
 set -e
 
@@ -9,29 +9,34 @@ CLAUDE_DIR="$HOME/.claude"
 HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
 
-echo "Installing know-plugin hooks..."
+echo "============================================"
+echo "  Know Plugin v2.0 - Whisper Loop Installer"
+echo "============================================"
+echo ""
 
-# Create hooks directory if it doesn't exist
+# Create directories
 mkdir -p "$HOOKS_DIR"
+mkdir -p "$CLAUDE_DIR/handoffs"
 
-# Copy hook scripts
-cp "$SCRIPT_DIR/inject-knowledge.sh" "$HOOKS_DIR/"
-cp "$SCRIPT_DIR/knowledge-capture.sh" "$HOOKS_DIR/"
-chmod +x "$HOOKS_DIR/inject-knowledge.sh"
-chmod +x "$HOOKS_DIR/knowledge-capture.sh"
-
-echo "✓ Copied hooks to $HOOKS_DIR"
+# Copy all hook scripts
+echo "Installing hooks..."
+for script in common.sh inject-knowledge.sh knowledge-capture.sh session-checkpoint.sh verify.sh; do
+    if [ -f "$SCRIPT_DIR/$script" ]; then
+        cp "$SCRIPT_DIR/$script" "$HOOKS_DIR/"
+        chmod +x "$HOOKS_DIR/$script"
+        echo "  [OK] $script"
+    fi
+done
 
 # Check if settings.json exists
 if [ ! -f "$SETTINGS_FILE" ]; then
-    echo "Creating $SETTINGS_FILE..."
     echo '{"$schema": "https://json.schemastore.org/claude-code-settings.json", "hooks": {}}' > "$SETTINGS_FILE"
 fi
 
 # Backup existing settings
-cp "$SETTINGS_FILE" "$SETTINGS_FILE.backup"
+cp "$SETTINGS_FILE" "$SETTINGS_FILE.backup.$(date +%Y%m%d%H%M%S)"
 
-# Update settings.json with hooks configuration using jq
+# Full hooks config including SessionEnd and PreCompact
 HOOKS_CONFIG='{
   "SessionStart": [{
     "matcher": "startup",
@@ -47,28 +52,44 @@ HOOKS_CONFIG='{
       "command": "bash ~/.claude/hooks/knowledge-capture.sh",
       "timeout": 10
     }]
+  }],
+  "SessionEnd": [{
+    "hooks": [{
+      "type": "command",
+      "command": "bash ~/.claude/hooks/session-checkpoint.sh",
+      "timeout": 10
+    }]
+  }],
+  "PreCompact": [{
+    "matcher": "auto",
+    "hooks": [{
+      "type": "command",
+      "command": "bash ~/.claude/hooks/session-checkpoint.sh",
+      "timeout": 10
+    }]
   }]
 }'
 
-# Merge hooks config into settings
+# Merge hooks config
 if command -v jq &> /dev/null; then
-    jq --argjson hooks "$HOOKS_CONFIG" '.hooks = ($hooks * .hooks)' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp" && mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
-    echo "✓ Updated $SETTINGS_FILE with hooks configuration"
+    jq --argjson hooks "$HOOKS_CONFIG" '.hooks = ($hooks * .hooks)' "$SETTINGS_FILE" > "$SETTINGS_FILE.tmp"
+    mv "$SETTINGS_FILE.tmp" "$SETTINGS_FILE"
+    echo ""
+    echo "  [OK] Configured hooks in settings.json"
 else
-    echo "⚠ jq not found - please manually add hooks to $SETTINGS_FILE"
-    echo "Hooks config:"
-    echo "$HOOKS_CONFIG"
+    echo ""
+    echo "  [WARN] jq not found - manually add hooks to settings.json"
 fi
 
 echo ""
-echo "Installation complete!"
+echo "============================================"
+echo "  Installation Complete!"
+echo "============================================"
 echo ""
-echo "Optional configuration (add to ~/.bashrc or ~/.zshrc):"
+echo "Optional environment variables:"
+echo "  export KNOW_PROFILE_ID='your-profile-id'     # Profile injection"
+echo "  export PREFRONTAL_API_TOKEN='your-token'     # Cloud sync"
 echo ""
-echo "  # Profile ID for session briefing (find with: know entries | grep -i profile)"
-echo "  export KNOW_PROFILE_ID=\"your-profile-entry-id\""
+echo "Verify: ~/.claude/hooks/verify.sh"
 echo ""
-echo "  # Vision repo for backlog injection"
-echo "  export KNOW_VISION_REPO=\"yourorg/vision\""
-echo ""
-echo "Restart Claude Code to activate hooks."
+echo "Restart Claude Code to activate."
