@@ -93,6 +93,7 @@ done <<< "$RESULTS"
 if [ -n "$WHISPER" ]; then
     WHISPER=$(echo "$WHISPER" | head -15)
     echo "<knowledge-whisper>"
+    echo "[$(date '+%A %I:%M%p %Z %Y-%m-%d')]"
     echo "$WHISPER"
     echo "</knowledge-whisper>"
 fi
