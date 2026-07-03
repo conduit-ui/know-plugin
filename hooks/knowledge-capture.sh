@@ -26,48 +26,52 @@ fi
 # Lowercase for matching
 LOWER=$(echo "$PROMPT" | tr "[:upper:]" "[:lower:]")
 
-# ============ CAPTURE PHASE ============
-CAPTURED=""
+# ============ CAPTURE PHASE (classify-gated when hird is available) ============
+# Keyword regex is a cheap prefilter; where hird (local-model classifier) exists,
+# it decides whether the message is actually a milestone/decision/blocker vs a
+# question or noise. Everything stores as DRAFT so cleanup crons retain veto.
+# Classification runs detached: the hook returns fast, inference can take a minute.
+CAPTURE_RE="(tests? pass|all green|coverage|pr merged|deployed|released|feature complete|finished|done with|working now|fixed|resolved)"
+DECISION_RE="(lets go with|decided on|choosing|going to use|switching to|instead of|better approach|makes more sense)"
+BLOCKER_RE="(blocked by|cant proceed|stuck on|waiting for|depends on)"
+HIRD="${HIRD_BIN:-$HOME/.local/bin/hird}"
 
-# Milestone patterns
-if echo "$LOWER" | grep -qE "(tests? pass|all green|coverage|pr merged|deployed|released|feature complete|finished|done with|working now|fixed|resolved)"; then
-    TITLE=$(echo "$PROMPT" | head -c 100)
-    $KNOW add "Milestone: $TITLE" \
-        --category="architecture" \
-        --tags="milestone,auto-captured,$PROJECT,$(date +%Y-%m-%d)" \
-        --priority="high" \
-        --status="validated" \
-        --content="Auto-captured from Claude Code session. Project: $PROJECT" \
-        2>/dev/null || true
-    echo "[$(date)] MILESTONE [$PROJECT]: $PROMPT" >> "$LOG"
-    CAPTURED="milestone"
-fi
-
-# Decision patterns
-if echo "$LOWER" | grep -qE "(lets go with|decided on|choosing|going to use|switching to|instead of|better approach|makes more sense)"; then
-    TITLE=$(echo "$PROMPT" | head -c 100)
-    $KNOW add "Decision: $TITLE" \
-        --category="architecture" \
-        --tags="decision,auto-captured,$PROJECT,$(date +%Y-%m-%d)" \
-        --priority="high" \
-        --content="Auto-captured from Claude Code session. Project: $PROJECT" \
-        2>/dev/null || true
-    echo "[$(date)] DECISION [$PROJECT]: $PROMPT" >> "$LOG"
-    CAPTURED="decision"
-fi
-
-# Blocker patterns
-if echo "$LOWER" | grep -qE "(blocked by|cant proceed|stuck on|waiting for|depends on)"; then
-    TITLE=$(echo "$PROMPT" | head -c 100)
-    $KNOW add "Blocker: $TITLE" \
-        --category="debugging" \
-        --tags="blocker,auto-captured,$PROJECT,$(date +%Y-%m-%d)" \
-        --priority="critical" \
+store_capture() {
+    # $1=label $2=category $3=priority
+    "$KNOW" add "${1^}: $(printf '%s' "$PROMPT" | head -c 100)" \
+        --category="$2" \
+        --tags="$1,auto-captured,$PROJECT,$(date +%Y-%m-%d)" \
+        --priority="$3" \
         --status="draft" \
-        --content="Auto-captured from Claude Code session. Project: $PROJECT" \
+        --content="Auto-captured from Claude Code session. Project: $PROJECT. Prompt: $(printf '%s' "$PROMPT" | head -c 500)" \
         2>/dev/null || true
-    echo "[$(date)] BLOCKER [$PROJECT]: $PROMPT" >> "$LOG"
-    CAPTURED="blocker"
+    echo "[$(date)] CAPTURED as $1 [$PROJECT]: $(printf '%s' "$PROMPT" | head -c 120)" >> "$LOG"
+}
+
+if echo "$LOWER" | grep -qE "$CAPTURE_RE|$DECISION_RE|$BLOCKER_RE"; then
+    if [ -x "$HIRD" ]; then
+        # hird gate: local model classifies; only real signal is stored (as draft)
+        export -f store_capture
+        export PROMPT PROJECT KNOW LOG HIRD
+        setsid bash -c '
+            LABEL=$(printf "%s" "$PROMPT" | "$HIRD" classify "milestone,decision,blocker,question,noise" 2>/dev/null \
+                    | tr -d "[:space:]" | tr "[:upper:]" "[:lower:]")
+            case "$LABEL" in
+                milestone|decision) store_capture "$LABEL" "architecture" "high" ;;
+                blocker)            store_capture "blocker" "debugging" "critical" ;;
+                *) echo "[$(date)] SKIPPED (hird: ${LABEL:-no-answer}) [$PROJECT]: $(printf "%s" "$PROMPT" | head -c 120)" >> "$LOG" ;;
+            esac
+        ' >/dev/null 2>&1 &
+    else
+        # No hird on this machine: regex-only capture, demoted to draft
+        if echo "$LOWER" | grep -qE "$BLOCKER_RE"; then
+            store_capture "blocker" "debugging" "critical"
+        elif echo "$LOWER" | grep -qE "$DECISION_RE"; then
+            store_capture "decision" "architecture" "high"
+        else
+            store_capture "milestone" "architecture" "high"
+        fi
+    fi
 fi
 
 # ============ WHISPER PHASE ============
