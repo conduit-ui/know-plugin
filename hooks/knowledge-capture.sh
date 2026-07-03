@@ -93,12 +93,33 @@ while IFS= read -r line; do
     fi
 done <<< "$RESULTS"
 
+# ============ SESSION-MEMORY PHASE (mindkeeper mk_sessions) ============
+# Mined session history is a second memory: surface up to 2 relevant past
+# sessions beside curated knowledge. Entirely best-effort — any failure
+# (ollama down, qdrant down, no mindkeeper) silently yields nothing.
+SESSIONS=""
+if command -v jq >/dev/null 2>&1; then
+    QDRANT_URL="${QDRANT_URL:-http://localhost:6333}"
+    EMBED_URL="${EMBED_URL:-http://localhost:11434}"
+    VEC=$(jq -n --arg q "$QUERY" '{model:"bge-large", input:$q}' \
+        | curl -s -m 4 "$EMBED_URL/api/embed" -d @- 2>/dev/null \
+        | jq -c '.embeddings[0] // empty' 2>/dev/null)
+    if [ -n "$VEC" ]; then
+        SESSIONS=$(jq -n --argjson v "$VEC" \
+            '{vector:$v, limit:2, score_threshold:0.55, with_payload:["project","date","summary","preview"]}' \
+            | curl -s -m 3 "$QDRANT_URL/collections/mk_sessions/points/search" \
+                -H 'Content-Type: application/json' -d @- 2>/dev/null \
+            | jq -r '.result[]? | "[session " + (.payload.date // "?") + " · " + (.payload.project // "?") + "] " + (((.payload.summary // "") | if . == "None" or . == "" then empty else . end) // .payload.preview // "" | gsub("[\\n\\r\\t]+"; " ") | .[0:140])' 2>/dev/null)
+    fi
+fi
+
 # Output whisper if we found anything
-if [ -n "$WHISPER" ]; then
+if [ -n "$WHISPER" ] || [ -n "$SESSIONS" ]; then
     WHISPER=$(echo "$WHISPER" | head -15)
     echo "<knowledge-whisper>"
     echo "[$(date '+%A %I:%M%p %Z %Y-%m-%d')]"
-    echo "$WHISPER"
+    [ -n "$WHISPER" ] && echo "$WHISPER"
+    [ -n "$SESSIONS" ] && echo "$SESSIONS"
     echo "</knowledge-whisper>"
 fi
 
