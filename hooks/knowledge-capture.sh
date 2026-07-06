@@ -82,13 +82,22 @@ WHISPER=""
 QUERY=$(echo "$PROMPT" | head -c 200)
 RESULTS=$($KNOW search --semantic "$QUERY" --limit=3 2>/dev/null | tail -n +3)
 
-# Process each entry block
+# Process each entry block. Score floor 0.65: weak matches surfacing into
+# model context are noise at best and replayed-instruction risk at worst.
+SKIP_BLOCK=0
 while IFS= read -r line; do
     # Title line (starts with [)
     if [[ "$line" =~ ^\[([a-f0-9-]+)\] ]]; then
+        SCORE=$(echo "$line" | grep -oE '\(score: [0-9.]+\)' | grep -oE '[0-9.]+' | head -1)
+        if [ -n "$SCORE" ] && awk -v s="$SCORE" 'BEGIN{exit !(s < 0.65)}'; then
+            SKIP_BLOCK=1
+            continue
+        fi
+        SKIP_BLOCK=0
         WHISPER+="$line"$'\n'
     # Content snippet lines (not Category/Tags metadata)
     elif [[ -n "$line" && ! "$line" =~ ^(Category:|Tags:|Found) ]]; then
+        [ "$SKIP_BLOCK" = "1" ] && continue
         WHISPER+="  ↳ $line"$'\n'
     fi
 done <<< "$RESULTS"
@@ -106,7 +115,7 @@ if command -v jq >/dev/null 2>&1; then
         | jq -c '.embeddings[0] // empty' 2>/dev/null)
     if [ -n "$VEC" ]; then
         SESSIONS=$(jq -n --argjson v "$VEC" \
-            '{vector:$v, limit:2, score_threshold:0.55, with_payload:["project","date","summary","preview"]}' \
+            '{vector:$v, limit:2, score_threshold:0.65, with_payload:["project","date","summary","preview"]}' \
             | curl -s -m 3 "$QDRANT_URL/collections/mk_sessions/points/search" \
                 -H 'Content-Type: application/json' -d @- 2>/dev/null \
             | jq -r '.result[]? | "[session " + (.payload.date // "?") + " · " + (.payload.project // "?") + "] " + (((.payload.summary // "") | if . == "None" or . == "" then empty else . end) // .payload.preview // "" | gsub("[\\n\\r\\t]+"; " ") | .[0:140])' 2>/dev/null)
